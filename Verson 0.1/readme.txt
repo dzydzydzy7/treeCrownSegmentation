@@ -1,1 +1,2 @@
 先运行test_hat再运行test_run
+按图像识别
