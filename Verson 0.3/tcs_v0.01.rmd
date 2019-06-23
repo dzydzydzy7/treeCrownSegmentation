@@ -1,0 +1,107 @@
+---
+title: "tcs_v0.01"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+算法部分1.读入数据
+```{r}
+dsm<-read.table("E:/console/watershed/watershed/dsm.txt")
+dsm<-as.matrix(dsm)
+ttops<-read.table("E:/console/watershed/watershed/cttop.txt")#树顶
+ttops<-as.matrix(ttops)
+seeds<-read.table("E:/console/watershed/watershed/seeds.txt")#树顶的id矩阵
+seeds<-as.matrix(seeds)
+treeTopMap<-read.table("E:/console/watershed/watershed/seeds.txt")
+treeTopMap<-as.matrix(treeTopMap)
+```
+
+算法部分2.主体部分
+```{r}
+library(lidR)
+library(EBImage)
+library(Rcpp)
+#多棵树的id合到一个seeds矩阵里
+Rcpp::sourceCpp("E:/RStudio/workplace/part2one.cpp")
+Rcpp::sourceCpp('knn.cpp')
+Rcpp::sourceCpp('detect_part1.cpp')
+Rcpp::sourceCpp('detect_part2.cpp')
+Rcpp::sourceCpp('detect_part3.cpp')
+Rcpp::sourceCpp('enhance.cpp')
+
+for (i in 1:nrow(ttops)) {
+  radius<-knn(treeTopMap, ttops[i,1], ttops[i,2]);#确定邻域大小
+  chm<-dsm[(ttops[i,1]-radius):(ttops[i,1]+radius-1),(ttops[i,2]-radius):(ttops[i,2]+radius-1)];
+  #chm<-enhance(chm)
+  #afterSeg<-watershed(chm);
+  #afterSeg<-as.matrix(afterSeg);
+  
+  chm_r<-raster(chm);
+  t<-detect_part1(chm)
+  tr<-detect_part2(t)
+  ts<-detect_part3(tr, chm)
+  df<-data.frame(tree_id = 1:nrow(ts))
+  tops<-SpatialPointsDataFrame(ts,df,match.ID = TRUE)
+  afterSeg<-mcwatershed(chm_r, tops)()
+  #afterSeg<-silva2016(chm_r, tops)()
+  afterSeg<-as.matrix(afterSeg)
+  part2one(seeds,afterSeg,ttops[i,1],ttops[i,2]);
+}
+write.table(seeds, "res_seeds.txt",quote=F,col.name=F,row.names=F)
+
+seeds<-raster(seeds)
+```
+局部实验部分
+```{r}
+dsm<-read.table("E:/console/watershed/watershed/out.txt")
+dsm<-as.matrix(dsm)
+#dsm<-enhance(dsm)
+t<-detect_part1(dsm)
+tr<-detect_part2(t)
+ts<-detect_part3(tr, dsm)
+df<-data.frame(tree_id = 1:nrow(ts))
+ttops<-SpatialPointsDataFrame(ts,df,match.ID = TRUE)
+dsm_r<-raster(dsm)
+tree_detection(dsm_r, manual(ttops, 0.04))
+res<-mcwatershed(dsm_r, ttops)()
+plot(res)
+```
+对比部分
+```{r}
+dsm<-read.table("E:/console/watershed/watershed/out.txt")
+dsm<-as.matrix(dsm)
+dsm_r<-raster(dsm)
+ttops<-tree_detection(dsm_r, lmf(10))
+tree_detection(dsm_r, manual(ttops, 0.04))
+res<-mcwatershed(dsm_r, ttops)()
+plot(res)
+```
+
+匹配部分1.读入数据
+```{r}
+library(xlsx)
+library(dplyr)
+df<-read.table("Output.txt", header = TRUE, sep = ",")
+df<-select(df, x, y, area)
+write.csv(df, "manual.csv",col.names=TRUE)
+```
+
+匹配部分3.显示面积结果
+```{r}
+res<-read.table("E:/console/TreeTopMatch/TreeTopMatch/out.txt", header = TRUE)
+#names(res)<-c("质心", "树顶")
+#plot(res$质心, res$树顶,type = "p")
+write.csv(res, "match.csv",col.names=TRUE)
+
+```
+
+## Including Plots
+算法部分的结果
+```{r pressure, echo=FALSE}
+plot(seeds, col = pastel.colors(200))
+```
+
