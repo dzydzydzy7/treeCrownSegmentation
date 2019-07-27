@@ -1,0 +1,241 @@
+---
+title: "tcs_v0.01"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+算法部分1.读入数据
+```{r}
+dsm<-read.table("E:/console/watershed/watershed/dsm2.txt") #dsm2.txt
+dsm<-as.matrix(dsm)
+ttops<-read.table("E:/console/merge/merge/out_merge2.txt")#树顶
+ttops<-as.matrix(ttops)
+seeds<-read.table("E:/console/merge/merge/seeds2.txt")#树顶的id矩阵
+seeds<-as.matrix(seeds)
+copy_seeds<-seeds
+treeTopMap<-read.table("E:/console/merge/merge/seeds2.txt")
+treeTopMap<-as.matrix(treeTopMap)
+```
+
+算法部分2.主体部分
+```{r}
+library(lidR)
+library(EBImage)
+library(Rcpp)
+#多棵树的id合到一个seeds矩阵里
+Rcpp::sourceCpp("E:/RStudio/workplace/part2one.cpp")
+Rcpp::sourceCpp('knn.cpp')
+Rcpp::sourceCpp('detect_part1.cpp')
+Rcpp::sourceCpp('detect_part2.cpp')
+Rcpp::sourceCpp('detect_part3.cpp')
+Rcpp::sourceCpp('easy_detect.cpp')
+Rcpp::sourceCpp('enhance.cpp')
+Rcpp::sourceCpp('padding.cpp')
+
+padding_size<-100
+dsm<-padding(dsm, padding_size)
+count <- 0
+for (i in 1:nrow(ttops)) {
+  radius<-knn(treeTopMap, ttops[i,1], ttops[i,2]);#确定邻域大小
+  #radius<-80
+  left <- ttops[i,1]-radius + padding_size
+  #if(left < 1){left = 1}
+  right<-ttops[i,1]+radius-1 + padding_size
+  #if(right>=1322){right = 1322}
+  top<-ttops[i,2]-radius + padding_size
+  #if(top < 1){top = 1}
+  bottom<-ttops[i,2]+radius-1 + padding_size
+  #if(bottom >=993){bottom = 993}
+  chm<-dsm[left:right,top:bottom];
+  #chm<-enhance(chm)
+  #afterSeg<-watershed(chm);
+  #afterSeg<-as.matrix(afterSeg);
+  
+  chm_r<-raster(chm);
+  #t<-detect_part1(chm)
+  #tr<-detect_part2(t)
+  #ts<-detect_part3(tr, chm)
+  ts<-easy_detect(chm, treeTopMap, ttops[i, 2], ttops[i, 1], radius)
+  df<-data.frame(tree_id = 1:nrow(ts))
+  
+  tops<-SpatialPointsDataFrame(ts,df,match.ID = TRUE)
+  if(count == 52)tree_detection(chm_r, manual(tops, 0.04))
+  afterSeg<-mcwatershed(chm_r, tops)()
+  #afterSeg<-silva2016(chm_r, tops)()
+  afterSeg<-as.matrix(afterSeg)
+  part2one(seeds,afterSeg,chm,ttops[i,1],ttops[i,2]);
+  count <- count + 1
+}
+write.table(seeds, "res_seeds2.txt",quote=F,col.name=F,row.names=F)
+
+seeds<-raster(seeds)
+```
+
+
+截图：
+```{r}
+ts_cc<-rbind(ts_c,ts_c2)
+df_cc<-data.frame(tree_id = 1:nrow(ts_cc))
+tops_cc<-SpatialPointsDataFrame(ts_cc,df_cc,match.ID = TRUE)
+tree_detection(chm_r, manual(tops_cc, 0.04))
+```
+
+算法部分3.二次分割
+```{r}
+library(lidR)
+library(EBImage)
+library(Rcpp)
+#多棵树的id合到一个seeds矩阵里
+Rcpp::sourceCpp("E:/RStudio/workplace/part2one.cpp")
+Rcpp::sourceCpp('knn.cpp')
+Rcpp::sourceCpp('detect_part1.cpp')
+Rcpp::sourceCpp('detect_part2.cpp')
+Rcpp::sourceCpp('detect_part3.cpp')
+Rcpp::sourceCpp('enhance.cpp')
+Rcpp::sourceCpp('padding.cpp')
+
+
+dsm<-padding(dsm, 100)
+```
+
+横向比较1.全图分水岭
+```{r}
+library(lidR)
+library(EBImage)
+library(Rcpp)
+Rcpp::sourceCpp('detect_part3.cpp')
+dsm_r<-raster(dsm)
+ts_ws<-detect_part3(treeTopMap, dsm)
+df_ws<-data.frame(tree_id = 1:nrow(ts_ws))
+tops_ws<-SpatialPointsDataFrame(ts_ws,df_ws,match.ID = TRUE)
+afterSeg_ws<-mcwatershed(dsm_r, tops_ws)()
+#afterSeg_ws<-silva2016(dsm_r, tops_ws)()
+afterSeg_ws<-as.matrix(afterSeg_ws)
+write.table(afterSeg_ws,"res_seeds_ws2.txt",quote=F,col.name=F,row.names=F)
+```
+
+
+局部实验部分
+```{r}
+library(lidR)
+dsm<-read.table("E:/console/watershed/watershed/out.txt")
+dsm<-as.matrix(dsm)
+radius<-knn(dsm, 50, 50)
+#dsm<-dsm[(50-radius):(50+radius-1),(50-radius):(50+radius-1)];
+
+#dsm<-enhance(dsm)
+t<-detect_part1(dsm)
+tr<-detect_part2(t)
+ts<-detect_part3(tr, dsm)
+df<-data.frame(tree_id = 1:nrow(ts))
+ttops<-SpatialPointsDataFrame(ts,df,match.ID = TRUE)
+dsm[1,1]<-NA;
+dsm_r<-raster(dsm)
+#tree_detection(dsm_r, manual(ttops, 0.04))
+res<-mcwatershed(dsm_r, ttops)()
+plot(res)
+```
+对比部分
+```{r}
+dsm<-read.table("E:/console/watershed/watershed/out.txt")
+dsm<-as.matrix(dsm)
+dsm_r<-raster(dsm)
+ttops<-tree_detection(dsm_r, lmf(10))
+tree_detection(dsm_r, manual(ttops, 0.04))
+res<-mcwatershed(dsm_r, ttops)()
+plot(res)
+```
+
+匹配部分1.读入数据
+```{r}
+library(xlsx)
+library(dplyr)
+df<-read.table("Output2c.txt", header = TRUE, sep = ",")#Output2.txt
+df<-select(df, x, y, area)
+write.csv(df, "manual2c.csv",col.names=TRUE)
+write.table(df, "manual2c.txt", col.names = FALSE, row.names = FALSE)
+```
+
+匹配部分3.显示面积结果
+```{r}
+res<-read.table("E:/console/TreeTopMatch/TreeTopMatch/out2.txt", header = TRUE)
+#names(res)<-c("质心", "树顶")
+#plot(res$质心, res$树顶,type = "p")
+write.csv(res, "match2.csv",col.names=TRUE)
+
+```
+计算树顶的正检数
+```{r}
+library(dplyr)
+library(ggplot2)
+match<-read.table("match2.txt", header = TRUE, sep = ",")
+match<-select(match, FID_Manual_crowns)
+match<-as.matrix(match)
+Rcpp::sourceCpp('matchTop.cpp')
+m<-matchTop(match)
+rate<-m/215
+guojian<-nrow(match) - m
+loujian<-215 - nrow(match)
+```
+
+```{r}
+library(dplyr)
+library(lidR)
+library(EBImage)
+graph<-read.table("E:/console/TreeTopMatch/TreeTopMatch/out1.txt", header = TRUE)
+#x11(width = 8,height = 8)
+plot(graph$手工面积, graph$算法面积,xlab=expression("人工勾绘树冠面积/m"^2),ylab=expression("算法提取树冠面积/m"^2))
+lm_g<-lm(手工面积~算法面积,data=graph)  
+abline(lm_g)
+#bigTree<-filter(graph, 手工面积 > 15)
+#plot(bigTree$手工面积, bigTree$算法面积)
+#lm_bc<-lm(手工面积~算法面积,data=bigTree)  
+#abline(lm_bc)
+#smallTree<-filter(graph, 手工面积 <= 15)
+#plot(smallTree$手工面积, smallTree$算法面积)
+#lm_sc<-lm(手工面积~算法面积,data=smallTree)  
+#abline(lm_sc)
+closeTree<-filter(graph, graph$相对误差 <= 0.9)
+#x11(width = 8,height = 8)
+plot(closeTree$手工面积, closeTree$算法面积,xlab=expression("人工勾绘树冠面积/m"^2),ylab=expression("算法提取树冠面积/m"^2))
+lm_cc<-lm(手工面积~算法面积,data=closeTree)
+abline(lm_cc)
+write.csv(closeTree, "match1.csv",col.names=TRUE)
+```
+
+```{r}
+m
+rate
+guojian
+loujian
+#summary(lm_g)
+#summary(lm_bc)
+#summary(lm_sc)
+summary(lm_cc)
+mean(bigTree$相对误差)
+median(bigTree$相对误差)
+mean(smallTree$相对误差)
+median(smallTree$相对误差)
+```
+
+相对误差和R2
+```{r}
+library(dplyr)
+library(plotrix)
+dt<-read.table("zoneB.txt",header = TRUE)
+#sp=spline(dt$相对误差,dt$检测数)
+#sp=spline(dt$相对误差,dt$R2)
+twoord.plot(lx=dt$相对误差, ly=dt$R2,rx=dt$相对误差,ry=dt$检测数,xlab='相对误差', ylab=expression("R"^2), rylab='检测数',type='b')
+#plot(sp,type = "b")
+
+```
+
+算法部分的结果
+```{r}
+plot(seeds, col = pastel.colors(200))
+```
+
